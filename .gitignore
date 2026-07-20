@@ -1,0 +1,14 @@
+node_modules/
+dist/
+.DS_Store
+*.local
+.env
+.env.*
+!.env.example
+*.log
+.vite/
+
+# 開発内部メモ（公開対象外）
+AGENTS.md
+.cursor/
+.cursorignore
