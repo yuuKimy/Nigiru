@@ -8,7 +8,7 @@ const config: Phaser.Types.Core.GameConfig = {
   parent: "game-container",
   width: 800,
   height: 600,
-  backgroundColor: "#6b4226",
+  backgroundColor: "#d6ae70",
   scale: {
     mode: Phaser.Scale.FIT,
     autoCenter: Phaser.Scale.CENTER_BOTH,
@@ -16,4 +16,19 @@ const config: Phaser.Types.Core.GameConfig = {
   scene: [BootScene, SelectScene, GameScene],
 };
 
-new Phaser.Game(config);
+type GameHolder = { __nigiruGame?: Phaser.Game };
+const holder = globalThis as GameHolder;
+
+holder.__nigiruGame?.destroy(true);
+document.getElementById("game-container")?.replaceChildren();
+
+const game = new Phaser.Game(config);
+holder.__nigiruGame = game;
+
+if (import.meta.hot) {
+  import.meta.hot.dispose(() => {
+    game.destroy(true);
+    delete holder.__nigiruGame;
+    window.location.reload();
+  });
+}

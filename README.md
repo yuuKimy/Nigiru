@@ -53,7 +53,7 @@
 | 言語 | TypeScript |
 | バンドラ / 開発サーバ | Vite |
 | ゲームエンジン | Phaser 3 |
-| 描画 | Phaser Graphics（外部画像アセットなし） |
+| 描画 | Phaser 3（寿司・UI 画像アセット） |
 | 効果音 | Web Audio API |
 
 画面サイズは **800×600** 固定です。
@@ -86,6 +86,8 @@ src/
       GameScene.ts        # プレイ本体
     audio/
       SoundFx.ts          # 効果音
+    theme.ts              # フォント
+public/                   # 寿司・UI 画像
 docs/
   wasabi-panic-plan.md    # 開発計画書
   images/                 # README 用スクリーンショット

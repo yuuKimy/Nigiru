@@ -1,5 +1,6 @@
 import Phaser from "phaser";
 import { SoundFx } from "../audio/SoundFx";
+import { FONT } from "../theme";
 import type { GameSceneData, PlayerRole } from "./SelectScene";
 
 /** 中央判定ゾーンの幅（px）。以降のフェーズでもこの値を判定に使う。 */
@@ -39,11 +40,6 @@ const ROLE_TARGET: Record<PlayerRole, TargetType> = {
   adult: "withWasabi",
 };
 
-const ROLE_LABEL: Record<PlayerRole, string> = {
-  child: "子供（わさび抜き）",
-  adult: "大人（わさびあり）",
-};
-
 export class GameScene extends Phaser.Scene {
   private sushis: Sushi[] = [];
   private zoneLeft = 0;
@@ -56,7 +52,9 @@ export class GameScene extends Phaser.Scene {
   private isGameOver = false;
   private spaceKey!: Phaser.Input.Keyboard.Key;
   private spawnEvent?: Phaser.Time.TimerEvent;
-  private hudText!: Phaser.GameObjects.Text;
+  private scoreText!: Phaser.GameObjects.Text;
+  private comboText!: Phaser.GameObjects.Text;
+  private lifeIcons: Phaser.GameObjects.Image[] = [];
 
   constructor() {
     super("Game");
@@ -81,14 +79,7 @@ export class GameScene extends Phaser.Scene {
     this.drawConveyor(width);
     this.drawJudgmentZone(this.zoneLeft, this.zoneRight);
     this.drawGuide();
-    this.hudText = this.add
-      .text(width / 2, 68, "", {
-        fontFamily: "system-ui, sans-serif",
-        fontSize: "16px",
-        color: "#efebe9",
-      })
-      .setOrigin(0.5);
-    this.drawTitle();
+    this.drawHud();
     this.refreshHud();
 
     this.spaceKey = this.input.keyboard!.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
@@ -199,11 +190,22 @@ export class GameScene extends Phaser.Scene {
     const { width } = this.scale;
     const label = this.add
       .text(width / 2, 110, "スピードアップ!", {
-        fontFamily: "system-ui, sans-serif",
+        fontFamily: FONT,
         fontSize: "26px",
-        color: "#ffe082",
+        color: "#c62828",
+        fontStyle: "bold",
       })
       .setOrigin(0.5);
+
+    const spark = this.add.image(width / 2 + 110, 110, "star").setDisplaySize(28, 28);
+    this.tweens.add({
+      targets: spark,
+      y: 80,
+      alpha: 0,
+      duration: 900,
+      ease: "Cubic.easeOut",
+      onComplete: () => spark.destroy(),
+    });
 
     this.tweens.add({
       targets: label,
@@ -242,36 +244,45 @@ export class GameScene extends Phaser.Scene {
     this.sushis = [];
 
     const { width, height } = this.scale;
-    this.add.rectangle(width / 2, height / 2, width, height, 0x000000, 0.55);
+    this.add.rectangle(width / 2, height / 2, width, height, 0x3e2723, 0.55);
+
+    this.add.image(width / 2, height / 2 - 8, "plate-red").setDisplaySize(360, 360);
 
     this.add
-      .text(width / 2, height / 2 - 40, "GAME OVER", {
-        fontFamily: "system-ui, sans-serif",
-        fontSize: "48px",
-        color: "#ffcdd2",
-      })
-      .setOrigin(0.5);
-
-    this.add
-      .text(width / 2, height / 2 + 10, `SCORE: ${this.score}`, {
-        fontFamily: "system-ui, sans-serif",
-        fontSize: "20px",
+      .text(width / 2, height / 2 - 48, "おしまい", {
+        fontFamily: FONT,
+        fontSize: "42px",
         color: "#fff8e1",
+        fontStyle: "bold",
       })
       .setOrigin(0.5);
 
-    const retry = this.add
-      .text(width / 2, height / 2 + 70, "[ リトライ ]", {
-        fontFamily: "system-ui, sans-serif",
-        fontSize: "24px",
+    this.add
+      .text(width / 2, height / 2 + 4, `SCORE  ${this.score}`, {
+        fontFamily: FONT,
+        fontSize: "22px",
         color: "#ffe082",
       })
-      .setOrigin(0.5)
-      .setInteractive({ useHandCursor: true });
+      .setOrigin(0.5);
 
-    retry.on("pointerover", () => retry.setColor("#fff8e1"));
-    retry.on("pointerout", () => retry.setColor("#ffe082"));
-    retry.on("pointerdown", () => this.scene.start("Select"));
+    const retry = this.add.container(width / 2, height / 2 + 96);
+    const makisu = this.add.image(0, 0, "makisu").setDisplaySize(210, 136);
+    const retryHit = this.add
+      .rectangle(0, 0, 210, 136, 0x000000, 0.001)
+      .setInteractive({ useHandCursor: true });
+    const retryLabel = this.add
+      .text(0, 4, "もういちど", {
+        fontFamily: FONT,
+        fontSize: "22px",
+        color: "#5d3318",
+        fontStyle: "bold",
+      })
+      .setOrigin(0.5);
+    retry.add([makisu, retryHit, retryLabel]);
+
+    retryHit.on("pointerover", () => retry.setScale(1.06));
+    retryHit.on("pointerout", () => retry.setScale(1));
+    retryHit.on("pointerdown", () => this.scene.start("Select"));
   }
 
   /** 判定ゾーン内の未解決寿司のうち、最も左にあるもののインデックス。 */
@@ -296,21 +307,29 @@ export class GameScene extends Phaser.Scene {
   }
 
   private showFeedback(x: number, y: number, correct: boolean, message: string): void {
+    const fx = this.add
+      .image(x, y - 52, correct ? "star" : "steam")
+      .setDisplaySize(correct ? 28 : 32, correct ? 28 : 36);
+
     const label = this.add
       .text(x, y - 40, message, {
-        fontFamily: "system-ui, sans-serif",
+        fontFamily: FONT,
         fontSize: "22px",
-        color: correct ? "#c8e6c9" : "#ffcdd2",
+        color: correct ? "#2e7d32" : "#c62828",
+        fontStyle: "bold",
       })
       .setOrigin(0.5);
 
     this.tweens.add({
-      targets: label,
-      y: y - 70,
+      targets: [label, fx],
+      y: "-=30",
       alpha: 0,
       duration: 450,
       ease: "Cubic.easeOut",
-      onComplete: () => label.destroy(),
+      onComplete: () => {
+        label.destroy();
+        fx.destroy();
+      },
     });
   }
 
@@ -337,79 +356,24 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createSushiVisual(type: SushiType): Phaser.GameObjects.Container {
-    const g = this.add.graphics();
-
-    // 皿の影
-    g.fillStyle(0x3e2723, 0.28);
-    g.fillEllipse(2, PLATE_HEIGHT / 2 - 4, PLATE_WIDTH - 4, 14);
+    const plateKey = type === "trap" ? "plate-octagon" : "plate-empty";
+    const plate = this.add.image(0, 8, plateKey).setDisplaySize(PLATE_WIDTH + 4, PLATE_HEIGHT + 6);
 
     if (type === "trap") {
-      // トラップ：空皿（少しくすんだ縁で「おかしい」と気づける）
-      g.fillStyle(0xc5cdd3, 1);
-      g.fillEllipse(0, 6, PLATE_WIDTH, PLATE_HEIGHT);
-      g.lineStyle(3, 0x78909c, 1);
-      g.strokeEllipse(0, 6, PLATE_WIDTH, PLATE_HEIGHT);
-      g.lineStyle(2, 0xeceff1, 0.7);
-      g.strokeEllipse(0, 5, PLATE_WIDTH - 10, PLATE_HEIGHT - 12);
-      g.fillStyle(0xb0bec5, 0.7);
-      g.fillEllipse(0, 7, PLATE_WIDTH - 22, PLATE_HEIGHT - 24);
-      // 空っぽの印
-      g.lineStyle(2, 0x90a4ae, 0.9);
-      g.strokeCircle(0, 4, 10);
-      g.lineBetween(-6, -2, 6, 10);
-      return this.add.container(0, 0, [g]);
+      plate.setTint(0xcfd8dc);
+      plate.setDisplaySize(PLATE_WIDTH + 8, PLATE_HEIGHT + 8);
+      return this.add.container(0, 0, [plate]);
     }
 
-    g.fillStyle(0xd8e0e6, 1);
-    g.fillEllipse(0, 6, PLATE_WIDTH, PLATE_HEIGHT);
-
-    g.lineStyle(3, 0x90a4ae, 1);
-    g.strokeEllipse(0, 6, PLATE_WIDTH, PLATE_HEIGHT);
-
-    g.lineStyle(2, 0xf5fafc, 0.85);
-    g.strokeEllipse(0, 5, PLATE_WIDTH - 10, PLATE_HEIGHT - 12);
-
-    g.fillStyle(0xcfd8dc, 0.55);
-    g.fillEllipse(0, 7, PLATE_WIDTH - 22, PLATE_HEIGHT - 24);
-
-    g.fillStyle(0xf7f2e8, 1);
-    g.fillRoundedRect(-16, -2, 32, 20, 6);
-    g.fillStyle(0xe5dccf, 1);
-    g.fillRoundedRect(-16, 10, 32, 8, { tl: 0, tr: 0, bl: 6, br: 6 });
-
-    const netaX = -24;
-    const netaY = -14;
-    const netaW = 48;
-    const netaH = 16;
-    g.fillStyle(0xb71c1c, 1);
-    g.fillRoundedRect(netaX, netaY + 2, netaW, netaH, 5);
-    g.fillStyle(0xd32f2f, 1);
-    g.fillRoundedRect(netaX, netaY, netaW, netaH - 2, 5);
-
-    g.lineStyle(2.5, 0xffffff, 0.55);
-    g.beginPath();
-    g.moveTo(netaX + 8, netaY + 5);
-    g.lineTo(netaX + netaW - 14, netaY + 4);
-    g.strokePath();
-    g.lineStyle(1.5, 0xffcdd2, 0.7);
-    g.beginPath();
-    g.moveTo(netaX + 10, netaY + 9);
-    g.lineTo(netaX + netaW - 12, netaY + 8);
-    g.strokePath();
+    const sushiKey = type === "withWasabi" ? "maguro" : "sake";
+    const sushi = this.add.image(0, -8, sushiKey).setDisplaySize(58, 46);
+    const parts: Phaser.GameObjects.GameObject[] = [plate, sushi];
 
     if (type === "withWasabi") {
-      g.lineStyle(2, 0x8bc34a, 1);
-      g.strokeRoundedRect(-26, -16, 52, 36, 7);
-
-      g.fillStyle(0x558b2f, 1);
-      g.fillTriangle(-10, netaY + 4, 10, netaY + 4, 0, netaY - 12);
-      g.fillStyle(0x9ccc65, 1);
-      g.fillTriangle(-7, netaY + 2, 7, netaY + 2, 0, netaY - 9);
-      g.fillStyle(0xc5e1a5, 1);
-      g.fillTriangle(-3, netaY, 3, netaY, 0, netaY - 6);
+      parts.push(this.add.image(10, -22, "wasabi").setDisplaySize(22, 24));
     }
 
-    return this.add.container(0, 0, [g]);
+    return this.add.container(0, 0, parts);
   }
 
   private destroySushi(index: number): void {
@@ -419,42 +383,86 @@ export class GameScene extends Phaser.Scene {
   }
 
   private refreshHud(): void {
-    const comboText = this.combo > 0 ? `COMBO: x${Math.min(this.combo, MAX_COMBO_MULTIPLIER)}` : "COMBO: -";
-    this.hudText.setText(
-      `SCORE: ${this.score}    LIFE: ${this.life}    ${comboText}    属性: ${ROLE_LABEL[this.role]}`,
-    );
+    this.scoreText.setText(`${this.score}`);
+    const multiplier = Math.min(this.combo, MAX_COMBO_MULTIPLIER);
+    if (this.combo > 0) {
+      this.comboText.setText(`x${multiplier}`);
+      this.comboText.setAlpha(1);
+    } else {
+      this.comboText.setText("x1");
+      this.comboText.setAlpha(0.35);
+    }
+
+    for (let i = 0; i < this.lifeIcons.length; i++) {
+      const filled = i < this.life;
+      this.lifeIcons[i].setTexture(filled ? "wasabi" : "wasabi-empty");
+      this.lifeIcons[i].setAlpha(filled ? 1 : 0.7);
+    }
+  }
+
+  private drawHud(): void {
+    const { width } = this.scale;
+
+    this.add.image(width / 2, 38, "title-plaque").setDisplaySize(280, 58);
+    this.add
+      .text(width / 2, 36, "わさびパニック", {
+        fontFamily: FONT,
+        fontSize: "22px",
+        color: "#5d3318",
+        fontStyle: "bold",
+      })
+      .setOrigin(0.5);
+
+    this.add.image(86, 86, "plate-red").setDisplaySize(118, 118);
+    this.add
+      .text(86, 68, "SCORE", {
+        fontFamily: FONT,
+        fontSize: "11px",
+        color: "#fff8e1",
+      })
+      .setOrigin(0.5);
+    this.scoreText = this.add
+      .text(86, 92, "0", {
+        fontFamily: FONT,
+        fontSize: "22px",
+        color: "#fff8e1",
+        fontStyle: "bold",
+      })
+      .setOrigin(0.5);
+
+    this.add.image(178, 92, "soy").setDisplaySize(28, 36);
+    this.comboText = this.add
+      .text(204, 92, "x1", {
+        fontFamily: FONT,
+        fontSize: "16px",
+        color: "#5d3318",
+        fontStyle: "bold",
+      })
+      .setOrigin(0, 0.5);
+
+    this.lifeIcons = [];
+    for (let i = 0; i < INITIAL_LIFE; i++) {
+      const icon = this.add
+        .image(width - 36 - (INITIAL_LIFE - 1 - i) * 44, 78, "wasabi")
+        .setDisplaySize(38, 42);
+      this.lifeIcons.push(icon);
+    }
+
+    const roleKey = this.role === "child" ? "tamago" : "maguro";
+    this.add.image(width - 54, 122, roleKey).setDisplaySize(40, 32);
+    if (this.role === "adult") {
+      this.add.image(width - 34, 110, "wasabi").setDisplaySize(16, 18);
+    }
   }
 
   private drawBackground(width: number, height: number): void {
-    const g = this.add.graphics();
-
-    g.fillStyle(0x6b4226, 1);
-    g.fillRect(0, 0, width, height);
-
-    const plankColors = [0x5c3a1e, 0x7a4f2e, 0x654321, 0x8b5a2b];
-    const plankHeight = 40;
-    for (let y = 0, i = 0; y < height; y += plankHeight, i++) {
-      g.fillStyle(plankColors[i % plankColors.length], 0.55);
-      g.fillRect(0, y, width, plankHeight - 2);
-      g.lineStyle(1, 0x3e2723, 0.35);
-      g.lineBetween(0, y + plankHeight - 2, width, y + plankHeight - 2);
-    }
+    this.add.image(0, 0, "wood").setOrigin(0).setDisplaySize(width, height);
   }
 
   private drawConveyor(width: number): void {
-    const g = this.add.graphics();
-    const top = CONVEYOR_Y - CONVEYOR_HEIGHT / 2;
-
-    g.fillStyle(0xc4a574, 1);
-    g.fillRect(0, top, width, CONVEYOR_HEIGHT);
-
-    g.lineStyle(3, 0x8d6e4c, 1);
-    g.strokeRect(0, top, width, CONVEYOR_HEIGHT);
-
-    g.lineStyle(1, 0xa08060, 0.6);
-    for (let x = 20; x < width; x += 40) {
-      g.lineBetween(x, top + 8, x - 12, top + CONVEYOR_HEIGHT - 8);
-    }
+    this.add
+      .image(width / 2, CONVEYOR_Y + 6, "lane")
+      .setDisplaySize(width + 20, CONVEYOR_HEIGHT + 32);
   }
 
   private drawJudgmentZone(zoneLeft: number, zoneRight: number): void {
@@ -462,19 +470,27 @@ export class GameScene extends Phaser.Scene {
     const top = CONVEYOR_Y - CONVEYOR_HEIGHT / 2 - 12;
     const h = CONVEYOR_HEIGHT + 24;
 
-    g.fillStyle(0xffe082, 0.28);
-    g.fillRect(zoneLeft, top, ZONE_WIDTH, h);
+    g.fillStyle(0xffe082, 0.18);
+    g.fillRoundedRect(zoneLeft, top, ZONE_WIDTH, h, 10);
 
-    g.lineStyle(2, 0xffc107, 0.9);
-    g.strokeRect(zoneLeft, top, ZONE_WIDTH, h);
+    g.lineStyle(3, 0xe53935, 0.85);
+    g.strokeRoundedRect(zoneLeft, top, ZONE_WIDTH, h, 10);
 
+    const cx = (zoneLeft + zoneRight) / 2;
+    this.add.image(cx, top - 8, "wood-sign").setDisplaySize(92, 32);
     this.add
-      .text((zoneLeft + zoneRight) / 2, top - 18, "判定ゾーン", {
-        fontFamily: "system-ui, sans-serif",
+      .text(cx, top - 10, "ここ!", {
+        fontFamily: FONT,
         fontSize: "14px",
-        color: "#ffe082",
+        color: "#5d3318",
+        fontStyle: "bold",
       })
       .setOrigin(0.5);
+
+    this.add
+      .image(cx - 52, top - 6, "chopsticks")
+      .setDisplaySize(70, 28)
+      .setAngle(-18);
   }
 
   private drawGuide(): void {
@@ -485,21 +501,11 @@ export class GameScene extends Phaser.Scene {
         CONVEYOR_Y - CONVEYOR_HEIGHT / 2 - 56,
         `スペースで ${targetLabel} を取る（空皿はスルー）`,
         {
-          fontFamily: "system-ui, sans-serif",
-          fontSize: "16px",
-          color: "#f5e6d3",
+          fontFamily: FONT,
+          fontSize: "15px",
+          color: "#5d3318",
         },
       )
-      .setOrigin(0.5);
-  }
-
-  private drawTitle(): void {
-    this.add
-      .text(this.scale.width / 2, 36, "わさびパニック", {
-        fontFamily: "system-ui, sans-serif",
-        fontSize: "28px",
-        color: "#fff8e1",
-      })
       .setOrigin(0.5);
   }
 }
