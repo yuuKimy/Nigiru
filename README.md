@@ -53,7 +53,7 @@
 | 言語 | TypeScript |
 | バンドラ / 開発サーバ | Vite |
 | ゲームエンジン | Phaser 3 |
-| 描画 | Phaser 3（寿司・UI 画像アセット） |
+| 描画 | Phaser スプライト（Gemini で生成した寿司・UI 画像） |
 | 効果音 | Web Audio API |
 
 画面サイズは **800×600** 固定です。
