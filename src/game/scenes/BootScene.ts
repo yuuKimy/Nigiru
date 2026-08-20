@@ -19,7 +19,6 @@ export class BootScene extends Phaser.Scene {
 
     this.load.image("wasabi", "assets/ui/wasabi.png");
     this.load.image("wasabi-empty", "assets/ui/wasabi-empty.png");
-    this.load.image("soy", "assets/ui/soy.png");
     this.load.image("ginger", "assets/ui/ginger.png");
     this.load.image("chopsticks", "assets/ui/chopsticks.png");
     this.load.image("makisu", "assets/ui/makisu.png");
@@ -33,6 +32,10 @@ export class BootScene extends Phaser.Scene {
     this.load.image("steam", "assets/ui/steam.png");
     this.load.image("wood-sign", "assets/ui/wood-sign.png");
     this.load.image("title-plaque", "assets/ui/title-plaque.png");
+    this.load.image("chef", "assets/ui/chef.png");
+    this.load.image("customer-child-a", "assets/ui/customer-child-a.png");
+    this.load.image("customer-adult-a", "assets/ui/customer-adult-a.png");
+    this.load.image("customer-adult-b", "assets/ui/customer-adult-b.png");
   }
 
   create(): void {

@@ -1,12 +1,7 @@
 import Phaser from "phaser";
 import { SoundFx } from "../audio/SoundFx";
 import { FONT } from "../theme";
-
-export type PlayerRole = "child" | "adult";
-
-export type GameSceneData = {
-  role: PlayerRole;
-};
+import { WASABI_LABEL, type WasabiAmount } from "../orders";
 
 export class SelectScene extends Phaser.Scene {
   constructor() {
@@ -29,30 +24,53 @@ export class SelectScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     this.add
-      .text(width / 2, 128, "あなたはどっち？", {
+      .text(width / 2, 132, "注文どおりに握って流せ", {
         fontFamily: FONT,
         fontSize: "20px",
         color: "#6d4c2b",
       })
       .setOrigin(0.5);
 
-    this.createRoleButton(
-      width * 0.28,
-      height / 2 + 36,
-      "子供",
-      "わさび抜きを取る",
-      "child",
-    );
-    this.createRoleButton(
-      width * 0.72,
-      height / 2 + 36,
-      "大人",
-      "わさびありを取る",
-      "adult",
+    const samples: WasabiAmount[] = ["none", "normal", "extra"];
+    samples.forEach((amount, i) => {
+      const x = width * (0.22 + i * 0.28);
+      this.drawSample(x, height * 0.46, amount);
+    });
+
+    const start = this.add.container(width / 2, height - 92);
+    const hit = this.add
+      .circle(0, 0, 78, 0x000000, 0.001)
+      .setInteractive({ useHandCursor: true });
+    const plate = this.tryAddImage(0, 0, "plate-red")?.setDisplaySize(150, 150);
+    start.add(hit);
+    if (plate) {
+      start.add(plate);
+    }
+    start.add(
+      this.add
+        .text(0, 4, "スタート", {
+          fontFamily: FONT,
+          fontSize: "26px",
+          color: "#fff8e1",
+          fontStyle: "bold",
+        })
+        .setOrigin(0.5),
     );
 
+    hit.on("pointerover", () => {
+      this.tweens.add({ targets: start, scale: 1.08, duration: 140, ease: "Back.easeOut" });
+    });
+    hit.on("pointerout", () => {
+      this.tweens.add({ targets: start, scale: 1, duration: 140, ease: "Sine.easeOut" });
+    });
+    hit.on("pointerdown", () => {
+      SoundFx.unlock();
+      SoundFx.click();
+      this.scene.start("Game");
+    });
+
     this.add
-      .text(width / 2, height - 40, "お皿をクリックしてスタート", {
+      .text(width / 2, height - 28, "下の3ボタンでわさびの量を選んで握る", {
         fontFamily: FONT,
         fontSize: "14px",
         color: "#6d4c2b",
@@ -60,79 +78,36 @@ export class SelectScene extends Phaser.Scene {
       .setOrigin(0.5);
   }
 
-  private createRoleButton(
-    x: number,
-    y: number,
-    title: string,
-    subtitle: string,
-    role: PlayerRole,
-  ): void {
-    const isChild = role === "child";
-    const plateKey = isChild ? "plate-cat" : "plate-red";
-    const sushiKey = isChild ? "tamago" : "maguro";
-
+  private drawSample(x: number, y: number, amount: WasabiAmount): void {
     const root = this.add.container(x, y);
-
-    const hit = this.add
-      .circle(0, 0, 108, 0x000000, 0.001)
-      .setInteractive({ useHandCursor: true });
-
-    const plate = this.tryAddImage(0, -8, plateKey)?.setDisplaySize(200, 200);
-    const sushi = this.tryAddImage(0, -18, sushiKey)?.setDisplaySize(108, 86);
-    root.add(hit);
+    const plate = this.tryAddImage(0, 10, "plate-empty")?.setDisplaySize(110, 80);
+    const sushi = this.tryAddImage(0, -6, "maguro")?.setDisplaySize(72, 56);
     if (plate) {
       root.add(plate);
     }
     if (sushi) {
       root.add(sushi);
     }
-
-    const garnish = isChild
-      ? this.tryAddImage(36, 18, "ginger")?.setDisplaySize(40, 34)
-      : this.tryAddImage(28, -48, "wasabi")?.setDisplaySize(42, 46);
-    if (garnish) {
-      root.add(garnish);
+    if (amount !== "none") {
+      const size = amount === "extra" ? [40, 44] : [22, 24];
+      const wasabi = this.tryAddImage(18, amount === "extra" ? -36 : -24, "wasabi")?.setDisplaySize(
+        size[0],
+        size[1],
+      );
+      if (wasabi) {
+        root.add(wasabi);
+      }
     }
-
-    const titleText = this.add
-      .text(0, 108, title, {
-        fontFamily: FONT,
-        fontSize: "26px",
-        color: "#5d3318",
-        fontStyle: "bold",
-      })
-      .setOrigin(0.5);
-    const subText = this.add
-      .text(0, 136, subtitle, {
-        fontFamily: FONT,
-        fontSize: "14px",
-        color: "#7a5634",
-      })
-      .setOrigin(0.5);
-    root.add([titleText, subText]);
-
-    hit.on("pointerover", () => {
-      this.tweens.add({
-        targets: root,
-        scale: 1.08,
-        duration: 140,
-        ease: "Back.easeOut",
-      });
-    });
-    hit.on("pointerout", () => {
-      this.tweens.add({
-        targets: root,
-        scale: 1,
-        duration: 140,
-        ease: "Sine.easeOut",
-      });
-    });
-    hit.on("pointerdown", () => {
-      SoundFx.unlock();
-      SoundFx.click();
-      const data: GameSceneData = { role };
-      this.scene.start("Game", data);
-    });
+    root.add(
+      this.add
+        .text(0, 62, WASABI_LABEL[amount], {
+          fontFamily: FONT,
+          fontSize: "20px",
+          color: "#5d3318",
+          fontStyle: "bold",
+        })
+        .setOrigin(0.5),
+    );
   }
 
   private tryAddImage(

@@ -14,6 +14,24 @@ class SoundFxPlayer {
     this.tone(660, 0.06, "triangle", 0.05);
   }
 
+  nigiri(): void {
+    this.tone(220, 0.07, "triangle", 0.06);
+    this.tone(140, 0.05, "sine", 0.04, 0.02);
+  }
+
+  ship(): void {
+    this.tone(880, 0.05, "triangle", 0.04);
+  }
+
+  enter(): void {
+    this.tone(784, 0.07, "sine", 0.05);
+    this.tone(988, 0.08, "sine", 0.04, 0.06);
+  }
+
+  rush(): void {
+    this.speedUp();
+  }
+
   ok(combo: number): void {
     const base = 520 + Math.min(combo, 5) * 40;
     this.tone(base, 0.07, "sine", 0.07);

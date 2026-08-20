@@ -44,13 +44,13 @@ async function main() {
 
     await page.evaluate(() => {
       const game = globalThis.__nigiruGame;
-      game.scene.getScene("Select").scene.start("Game", { role: "child" });
+      game.scene.getScene("Select").scene.start("Game");
     });
     await page.waitForFunction(
       () => globalThis.__nigiruGame?.scene?.isActive("Game") === true,
       { timeout: 10000 },
     );
-    await new Promise((r) => setTimeout(r, 1600));
+    await new Promise((r) => setTimeout(r, 2200));
 
     const playPath = path.join(OUT_DIR, "play.png");
     await shotCanvas(page, playPath);
