@@ -47,10 +47,19 @@ async function main() {
       game.scene.getScene("Select").scene.start("Game");
     });
     await page.waitForFunction(
-      () => globalThis.__nigiruGame?.scene?.isActive("Game") === true,
+      () =>
+        globalThis.__nigiruGame?.scene?.isActive("Game") === true &&
+        globalThis.__nigiruGame?.scene?.isActive("Select") !== true,
       { timeout: 10000 },
     );
-    await new Promise((r) => setTimeout(r, 2200));
+    await page.waitForFunction(
+      () => {
+        const scene = globalThis.__nigiruGame?.scene?.getScene("Game");
+        return (scene?.sys?.displayList?.length ?? 0) > 8;
+      },
+      { timeout: 10000 },
+    );
+    await new Promise((r) => setTimeout(r, 2500));
 
     const playPath = path.join(OUT_DIR, "play.png");
     await shotCanvas(page, playPath);
