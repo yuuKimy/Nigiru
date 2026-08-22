@@ -5,7 +5,7 @@
 
 ## お試しプレイ
 
-**[https://yuuKimy.github.io/Nigiru/](https://yuuKimy.github.io/Nigiru/)** — ビルド不要でブラウザから遊べます（テスト版）。スマホは **横向き** 推奨。
+**[https://yuukimy.github.io/Nigiru/](https://yuukimy.github.io/Nigiru/)** — ビルド不要でブラウザから遊べます（テスト版）。スマホは **横向き** 推奨。
 
 ## スクリーンショット
 
