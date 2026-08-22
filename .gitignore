@@ -11,5 +11,8 @@ dist/
 .tmp_refs/
 
 # 開発内部メモ（公開対象外）
-.cursor/
+.cursor/*
+!.cursor/skills/
+.cursor/skills/*
+!.cursor/skills/nigiru-dev/
 .cursorignore
