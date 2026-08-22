@@ -11,6 +11,5 @@ dist/
 .tmp_refs/
 
 # 開発内部メモ（公開対象外）
-AGENTS.md
 .cursor/
 .cursorignore
