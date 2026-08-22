@@ -11,7 +11,11 @@ async function shotCanvas(page, filePath) {
   if (!canvas) {
     throw new Error("canvas not found");
   }
-  await canvas.screenshot({ path: filePath });
+  const box = await canvas.boundingBox();
+  if (!box) {
+    throw new Error("canvas has no box");
+  }
+  await page.screenshot({ path: filePath, clip: box });
 }
 
 async function main() {
@@ -41,6 +45,16 @@ async function main() {
     const selectPath = path.join(OUT_DIR, "select.png");
     await shotCanvas(page, selectPath);
     console.log("wrote", selectPath);
+
+    await page.goto("http://localhost:5173/", {
+      waitUntil: "networkidle0",
+      timeout: 30000,
+    });
+    await page.waitForSelector("canvas", { timeout: 15000 });
+    await page.waitForFunction(
+      () => globalThis.__nigiruGame?.scene?.isActive("Select") === true,
+      { timeout: 10000 },
+    );
 
     await page.evaluate(() => {
       const game = globalThis.__nigiruGame;

@@ -1,11 +1,20 @@
 export type WasabiAmount = "none" | "normal" | "extra";
 export type CustomerKind = "child" | "adult";
+export type NetaKind = "maguro" | "tamago";
+
+export type Order = {
+  neta: NetaKind;
+  wasabi: WasabiAmount;
+};
 
 export const WASABI_LABEL: Record<WasabiAmount, string> = {
   none: "なし",
   normal: "普通",
   extra: "大盛り",
 };
+
+/** たまご注文の出現率（開始値） */
+export const TAMAGO_ORDER_RATE = 0.25;
 
 export function pickCustomerKind(random: () => number = Math.random): CustomerKind {
   return random() < 0.5 ? "child" : "adult";
@@ -38,4 +47,15 @@ export function pickOrder(
     return "normal";
   }
   return "extra";
+}
+
+export function pickCustomerOrder(
+  kind: CustomerKind,
+  rush: boolean,
+  random: () => number = Math.random,
+): Order {
+  if (random() < TAMAGO_ORDER_RATE) {
+    return { neta: "tamago", wasabi: "none" };
+  }
+  return { neta: "maguro", wasabi: pickOrder(kind, rush, random) };
 }

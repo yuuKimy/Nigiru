@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pickCustomerKind, pickOrder } from "./orders";
+import { pickCustomerKind, pickCustomerOrder, pickOrder, TAMAGO_ORDER_RATE } from "./orders";
 
 describe("pickCustomerKind", () => {
   it("returns child below 0.5 and adult at 0.5", () => {
@@ -56,5 +56,41 @@ describe("pickOrder", () => {
     expect(childNone).toBeGreaterThan(adultNone);
     expect(adultExtra).toBeGreaterThan(adultNone);
     expect(adultRushExtra).toBeGreaterThan(adultExtra);
+  });
+});
+
+describe("pickCustomerOrder", () => {
+  it("returns tamago with none wasabi below TAMAGO_ORDER_RATE", () => {
+    expect(pickCustomerOrder("adult", false, () => 0)).toEqual({
+      neta: "tamago",
+      wasabi: "none",
+    });
+    expect(pickCustomerOrder("child", false, () => TAMAGO_ORDER_RATE - 0.001)).toEqual({
+      neta: "tamago",
+      wasabi: "none",
+    });
+  });
+
+  it("returns maguro with wasabi roll at or above TAMAGO_ORDER_RATE", () => {
+    expect(pickCustomerOrder("adult", false, () => TAMAGO_ORDER_RATE)).toEqual({
+      neta: "maguro",
+      wasabi: "normal",
+    });
+    expect(pickCustomerOrder("child", false, () => 0.99)).toEqual({
+      neta: "maguro",
+      wasabi: "extra",
+    });
+  });
+
+  it("uses separate rolls for neta and wasabi", () => {
+    let calls = 0;
+    const random = () => {
+      calls += 1;
+      return calls === 1 ? 0.99 : 0;
+    };
+    expect(pickCustomerOrder("adult", false, random)).toEqual({
+      neta: "maguro",
+      wasabi: "none",
+    });
   });
 });

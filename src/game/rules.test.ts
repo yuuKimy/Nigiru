@@ -7,7 +7,9 @@ import {
   applyWalkout,
   canShip,
   isRush,
+  patienceDrainMultiplier,
   resolvePlateAtSeats,
+  rollRushPatienceDrainBoost,
   scoreForOk,
   shouldDiscardPlate,
 } from "./rules";
@@ -45,46 +47,86 @@ describe("isRush", () => {
   });
 });
 
+describe("patienceDrainMultiplier", () => {
+  it("starts at 1 and ramps to PATIENCE_DRAIN_MAX over 90 seconds", () => {
+    expect(patienceDrainMultiplier(0)).toBe(1);
+    expect(patienceDrainMultiplier(45000)).toBeCloseTo(1.75);
+    expect(patienceDrainMultiplier(90000)).toBe(2.5);
+    expect(patienceDrainMultiplier(180000)).toBe(2.5);
+  });
+
+  it("multiplies by rush boost only during rush, then returns to base", () => {
+    const atRush = FIRST_RUSH_AT_MS + 1000;
+    const baseAtRush = 1 + (2.5 - 1) * (atRush / 90000);
+    expect(patienceDrainMultiplier(atRush, 1.4)).toBeCloseTo(baseAtRush * 1.4);
+    expect(patienceDrainMultiplier(FIRST_RUSH_AT_MS + RUSH_DURATION_MS, 1.4)).toBe(
+      patienceDrainMultiplier(FIRST_RUSH_AT_MS + RUSH_DURATION_MS),
+    );
+  });
+});
+
+describe("rollRushPatienceDrainBoost", () => {
+  it("returns a value in 1.2..1.5", () => {
+    expect(rollRushPatienceDrainBoost(() => 0)).toBeCloseTo(1.2);
+    expect(rollRushPatienceDrainBoost(() => 1)).toBeCloseTo(1.5);
+    expect(rollRushPatienceDrainBoost(() => 0.5)).toBeCloseTo(1.35);
+  });
+});
+
 describe("resolvePlateAtSeats", () => {
   const seats = [
-    { x: 100, amount: "none" as const },
-    { x: 300, amount: "normal" as const },
-    { x: 500, amount: "none" as const },
+    { x: 100, neta: "maguro" as const, wasabi: "none" as const },
+    { x: 300, neta: "maguro" as const, wasabi: "normal" as const },
+    { x: 500, neta: "maguro" as const, wasabi: "none" as const },
   ];
 
   it("takes at the first matching seat in range", () => {
-    expect(resolvePlateAtSeats(100, "none", seats, [false, false, false])).toEqual({
+    expect(resolvePlateAtSeats(100, "maguro", "none", seats, [false, false, false])).toEqual({
       seatIndex: 0,
       take: true,
     });
   });
 
   it("passes a mismatch and leaves later matching seats for later", () => {
-    expect(resolvePlateAtSeats(100, "normal", seats, [false, false, false])).toEqual({
+    expect(resolvePlateAtSeats(100, "maguro", "normal", seats, [false, false, false])).toEqual({
       seatIndex: 0,
       take: false,
     });
-    expect(resolvePlateAtSeats(300, "normal", seats, [true, false, false])).toEqual({
+    expect(resolvePlateAtSeats(300, "maguro", "normal", seats, [true, false, false])).toEqual({
       seatIndex: 1,
       take: true,
     });
   });
 
   it("lets the leftmost matching seat take when two seats want the same order", () => {
-    expect(resolvePlateAtSeats(500, "none", seats, [true, true, false])).toEqual({
+    expect(resolvePlateAtSeats(500, "maguro", "none", seats, [true, true, false])).toEqual({
       seatIndex: 2,
+      take: true,
+    });
+  });
+
+  it("passes when neta mismatches even if wasabi matches", () => {
+    expect(
+      resolvePlateAtSeats(100, "tamago", "none", seats, [false, false, false]),
+    ).toEqual({ seatIndex: 0, take: false });
+  });
+
+  it("takes tamago when seat wants tamago", () => {
+    const tamagoSeat = [{ x: 100, neta: "tamago" as const, wasabi: "none" as const }];
+    expect(resolvePlateAtSeats(100, "tamago", "none", tamagoSeat, [false])).toEqual({
+      seatIndex: 0,
       take: true,
     });
   });
 
   it("does not take from an empty seat", () => {
     expect(
-      resolvePlateAtSeats(100, "none", [{ x: 100, amount: null }], [false]),
+      resolvePlateAtSeats(100, "maguro", "none", [{ x: 100, neta: null, wasabi: null }], [false]),
     ).toEqual({ seatIndex: 0, take: false });
   });
 
   it("returns null when no seat is in range", () => {
-    expect(resolvePlateAtSeats(200, "none", seats, [false, false, false])).toBeNull();
+    expect(resolvePlateAtSeats(200, "maguro", "none", seats, [false, false, false])).toBeNull();
   });
 });
 

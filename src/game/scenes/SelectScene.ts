@@ -1,7 +1,7 @@
 import Phaser from "phaser";
 import { SoundFx } from "../audio/SoundFx";
 import { FONT } from "../theme";
-import { WASABI_LABEL, type WasabiAmount } from "../orders";
+import { WASABI_LABEL, type NetaKind, type WasabiAmount } from "../orders";
 
 export class SelectScene extends Phaser.Scene {
   constructor() {
@@ -31,17 +31,19 @@ export class SelectScene extends Phaser.Scene {
       })
       .setOrigin(0.5);
 
-    const samples: WasabiAmount[] = ["none", "normal", "extra"];
-    samples.forEach((amount, i) => {
-      const x = width * (0.22 + i * 0.28);
-      this.drawSample(x, height * 0.46, amount);
+    const slots = 4;
+    const sampleY = height * 0.46;
+    const maguroSamples: WasabiAmount[] = ["none", "normal", "extra"];
+    maguroSamples.forEach((amount, i) => {
+      this.drawSample(width * (i + 0.5) / slots, sampleY, "maguro", amount);
     });
+    this.drawSample(width * (3 + 0.5) / slots, sampleY, "tamago", "none");
 
     const start = this.add.container(width / 2, height - 92);
     const hit = this.add
       .circle(0, 0, 78, 0x000000, 0.001)
       .setInteractive({ useHandCursor: true });
-    const plate = this.tryAddImage(0, 0, "plate-red")?.setDisplaySize(150, 150);
+    const plate = this.tryAddImage(0, 0, "plate-octagon")?.setDisplaySize(156, 156);
     start.add(hit);
     if (plate) {
       start.add(plate);
@@ -51,7 +53,7 @@ export class SelectScene extends Phaser.Scene {
         .text(0, 4, "スタート", {
           fontFamily: FONT,
           fontSize: "26px",
-          color: "#fff8e1",
+          color: "#3e2723",
           fontStyle: "bold",
         })
         .setOrigin(0.5),
@@ -68,39 +70,33 @@ export class SelectScene extends Phaser.Scene {
       SoundFx.click();
       this.scene.start("Game");
     });
-
-    this.add
-      .text(width / 2, height - 28, "下の3ボタンでわさびの量を選んで握る", {
-        fontFamily: FONT,
-        fontSize: "14px",
-        color: "#6d4c2b",
-      })
-      .setOrigin(0.5);
   }
 
-  private drawSample(x: number, y: number, amount: WasabiAmount): void {
+  private drawSample(x: number, y: number, neta: NetaKind, wasabi: WasabiAmount): void {
     const root = this.add.container(x, y);
     const plate = this.tryAddImage(0, 10, "plate-empty")?.setDisplaySize(110, 80);
-    const sushi = this.tryAddImage(0, -6, "maguro")?.setDisplaySize(72, 56);
+    const netaKey = neta === "tamago" ? "tamago" : "maguro";
+    const sushi = this.tryAddImage(0, -6, netaKey)?.setDisplaySize(72, 56);
     if (plate) {
       root.add(plate);
     }
     if (sushi) {
       root.add(sushi);
     }
-    if (amount !== "none") {
-      const size = amount === "extra" ? [40, 44] : [22, 24];
-      const wasabi = this.tryAddImage(18, amount === "extra" ? -36 : -24, "wasabi")?.setDisplaySize(
+    if (neta === "maguro" && wasabi !== "none") {
+      const size = wasabi === "extra" ? [40, 44] : [22, 24];
+      const wasabiImg = this.tryAddImage(18, wasabi === "extra" ? -36 : -24, "wasabi")?.setDisplaySize(
         size[0],
         size[1],
       );
-      if (wasabi) {
-        root.add(wasabi);
+      if (wasabiImg) {
+        root.add(wasabiImg);
       }
     }
+    const labelText = neta === "tamago" ? "たまご" : WASABI_LABEL[wasabi];
     root.add(
       this.add
-        .text(0, 62, WASABI_LABEL[amount], {
+        .text(0, 62, labelText, {
           fontFamily: FONT,
           fontSize: "20px",
           color: "#5d3318",

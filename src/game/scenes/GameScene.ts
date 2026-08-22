@@ -2,9 +2,11 @@ import Phaser from "phaser";
 import { SoundFx } from "../audio/SoundFx";
 import {
   pickCustomerKind,
-  pickOrder,
+  pickCustomerOrder,
   WASABI_LABEL,
   type CustomerKind,
+  type NetaKind,
+  type Order,
   type WasabiAmount,
 } from "../orders";
 import {
@@ -14,11 +16,13 @@ import {
   applyWalkout,
   canShip,
   isRush,
+  patienceDrainMultiplier,
   resolvePlateAtSeats,
+  rollRushPatienceDrainBoost,
   scoreForOk,
   shouldDiscardPlate,
 } from "../rules";
-import { FONT } from "../theme";
+import { FONT, formatScore } from "../theme";
 
 const CONVEYOR_HEIGHT = 100;
 const CONVEYOR_Y = 318;
@@ -31,12 +35,20 @@ const ENTER_INTERVAL_START = 5000;
 const ENTER_INTERVAL_MIN = 2400;
 const RUSH_ENTER_INTERVAL = 1700;
 const SHIP_COOLDOWN_MS = 160;
+const PATIENCE_ORANGE_RATIO = 0.55;
+const PATIENCE_RED_RATIO = 0.28;
+const ANGER_MARK_SIZE = { child: 16, adult: 20 } as const;
+const ANGER_MARK_AT = {
+  child: { x: 34, y: -40 },
+  adult: { x: 38, y: -44 },
+} as const;
 
 const CHILD_KEYS = ["customer-child-a"] as const;
 const ADULT_KEYS = ["customer-adult-a", "customer-adult-b"] as const;
 
 type Plate = {
-  amount: WasabiAmount;
+  neta: NetaKind;
+  wasabi: WasabiAmount;
   resolved: boolean;
   passed: boolean[];
   container: Phaser.GameObjects.Container;
@@ -44,7 +56,8 @@ type Plate = {
 
 type Customer = {
   kind: CustomerKind;
-  amount: WasabiAmount;
+  neta: NetaKind;
+  wasabi: WasabiAmount;
   patience: number;
   maxPatience: number;
   spriteKey: string;
@@ -56,6 +69,9 @@ type SeatView = {
   root: Phaser.GameObjects.Container;
   body?: Phaser.GameObjects.Image;
   bubble?: Phaser.GameObjects.Container;
+  angerMark?: Phaser.GameObjects.Image;
+  bodyShake?: Phaser.Tweens.Tween;
+  bodyBaseX?: number;
   barBg: Phaser.GameObjects.Rectangle;
   barFill: Phaser.GameObjects.Rectangle;
 };
@@ -71,6 +87,7 @@ export class GameScene extends Phaser.Scene {
   private enterAccMs = 0;
   private shipCoolMs = 0;
   private rushAnnounced = false;
+  private rushPatienceBoost = 1;
   private scoreText!: Phaser.GameObjects.Text;
   private comboText!: Phaser.GameObjects.Text;
   private rushText!: Phaser.GameObjects.Text;
@@ -85,6 +102,7 @@ export class GameScene extends Phaser.Scene {
   private keyLeft!: Phaser.Input.Keyboard.Key;
   private keyDown!: Phaser.Input.Keyboard.Key;
   private keyRight!: Phaser.Input.Keyboard.Key;
+  private keyTamago!: Phaser.Input.Keyboard.Key;
 
   constructor() {
     super("Game");
@@ -101,6 +119,7 @@ export class GameScene extends Phaser.Scene {
     this.enterAccMs = 0;
     this.shipCoolMs = 0;
     this.rushAnnounced = false;
+    this.rushPatienceBoost = 1;
   }
 
   create(): void {
@@ -125,6 +144,7 @@ export class GameScene extends Phaser.Scene {
     this.keyLeft = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.LEFT);
     this.keyDown = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.DOWN);
     this.keyRight = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.RIGHT);
+    this.keyTamago = keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.FOUR);
   }
 
   update(_time: number, delta: number): void {
@@ -146,6 +166,7 @@ export class GameScene extends Phaser.Scene {
     this.rushText.setAlpha(rushing ? 1 : 0);
     if (rushing && !this.rushAnnounced) {
       this.rushAnnounced = true;
+      this.rushPatienceBoost = rollRushPatienceDrainBoost();
       SoundFx.rush();
     }
     if (!rushing) {
@@ -195,7 +216,7 @@ export class GameScene extends Phaser.Scene {
         continue;
       }
 
-      customer.patience -= delta;
+      customer.patience -= delta * patienceDrainMultiplier(this.elapsedMs, this.rushPatienceBoost);
       this.updateSeatBar(seat);
       if (customer.patience <= 0) {
         this.walkout(i);
@@ -217,8 +238,13 @@ export class GameScene extends Phaser.Scene {
 
       const hit = resolvePlateAtSeats(
         plate.container.x,
-        plate.amount,
-        this.seats.map((seat) => ({ x: seat.x, amount: seat.customer?.amount ?? null })),
+        plate.neta,
+        plate.wasabi,
+        this.seats.map((seat) => ({
+          x: seat.x,
+          neta: seat.customer?.neta ?? null,
+          wasabi: seat.customer?.wasabi ?? null,
+        })),
         plate.passed,
       );
       if (hit) {
@@ -236,23 +262,26 @@ export class GameScene extends Phaser.Scene {
 
   private pollKeys(): void {
     if (Phaser.Input.Keyboard.JustDown(this.keyNone) || Phaser.Input.Keyboard.JustDown(this.keyLeft)) {
-      this.ship("none");
+      this.ship({ neta: "maguro", wasabi: "none" });
     }
     if (
       Phaser.Input.Keyboard.JustDown(this.keyNormal) ||
       Phaser.Input.Keyboard.JustDown(this.keyDown)
     ) {
-      this.ship("normal");
+      this.ship({ neta: "maguro", wasabi: "normal" });
     }
     if (
       Phaser.Input.Keyboard.JustDown(this.keyExtra) ||
       Phaser.Input.Keyboard.JustDown(this.keyRight)
     ) {
-      this.ship("extra");
+      this.ship({ neta: "maguro", wasabi: "extra" });
+    }
+    if (Phaser.Input.Keyboard.JustDown(this.keyTamago)) {
+      this.ship({ neta: "tamago", wasabi: "none" });
     }
   }
 
-  private ship(amount: WasabiAmount): void {
+  private ship(order: Order): void {
     if (!canShip(this.isGameOver, this.shipCoolMs, this.plates.length)) {
       return;
     }
@@ -262,10 +291,11 @@ export class GameScene extends Phaser.Scene {
     SoundFx.ship();
     this.pulseChef();
 
-    const container = this.createPlateVisual(amount);
+    const container = this.createPlateVisual(order.neta, order.wasabi);
     container.setPosition(154, CONVEYOR_Y).setDepth(2);
     this.plates.push({
-      amount,
+      neta: order.neta,
+      wasabi: order.wasabi,
       resolved: false,
       passed: this.seats.map(() => false),
       container,
@@ -323,18 +353,72 @@ export class GameScene extends Phaser.Scene {
     seat.barBg.setAlpha(1);
     const ratio = Phaser.Math.Clamp(customer.patience / customer.maxPatience, 0, 1);
     seat.barFill.scaleX = ratio;
-    seat.barFill.setFillStyle(ratio < 0.28 ? 0xe53935 : ratio < 0.55 ? 0xffb74d : 0x81c784);
+    seat.barFill.setFillStyle(
+      ratio < PATIENCE_RED_RATIO ? 0xe53935 : ratio < PATIENCE_ORANGE_RATIO ? 0xffb74d : 0x81c784,
+    );
+    this.syncSeatMood(seat, ratio);
+  }
+
+  private syncSeatMood(seat: SeatView, ratio: number): void {
+    const mark = seat.angerMark;
+    if (!seat.customer || !mark) {
+      this.stopBodyShake(seat);
+      return;
+    }
+
+    if (ratio >= PATIENCE_ORANGE_RATIO) {
+      mark.setVisible(false);
+      this.stopBodyShake(seat);
+      return;
+    }
+
+    const furious = ratio < PATIENCE_RED_RATIO;
+    mark.setVisible(true);
+    const base = ANGER_MARK_SIZE[seat.customer.kind === "child" ? "child" : "adult"];
+    const px = furious ? base * 1.1 : base;
+    mark.setDisplaySize(px, px);
+
+    if (furious) {
+      this.startBodyShake(seat);
+    } else {
+      this.stopBodyShake(seat);
+    }
+  }
+
+  private startBodyShake(seat: SeatView): void {
+    if (!seat.body || seat.bodyShake) {
+      return;
+    }
+    seat.bodyBaseX = seat.body.x;
+    seat.bodyShake = this.tweens.add({
+      targets: seat.body,
+      x: seat.bodyBaseX + 3,
+      duration: 70,
+      yoyo: true,
+      repeat: -1,
+      ease: "Sine.easeInOut",
+    });
+  }
+
+  private stopBodyShake(seat: SeatView): void {
+    seat.bodyShake?.stop();
+    seat.bodyShake = undefined;
+    if (seat.body && seat.bodyBaseX !== undefined) {
+      seat.body.x = seat.bodyBaseX;
+    }
+    seat.bodyBaseX = undefined;
   }
 
   private seatCustomer(index: number): void {
     const kind = pickCustomerKind();
-    const amount = pickOrder(kind, isRush(this.elapsedMs));
+    const order = pickCustomerOrder(kind, isRush(this.elapsedMs));
     const keys = kind === "child" ? CHILD_KEYS : ADULT_KEYS;
     const spriteKey = keys[Math.floor(Math.random() * keys.length)];
     const patience = this.patienceForNewCustomer();
     this.seats[index].customer = {
       kind,
-      amount,
+      neta: order.neta,
+      wasabi: order.wasabi,
       patience,
       maxPatience: patience,
       spriteKey,
@@ -415,64 +499,76 @@ export class GameScene extends Phaser.Scene {
   }
 
   private drawSeat(seat: SeatView): void {
+    this.stopBodyShake(seat);
     seat.body?.destroy();
     seat.bubble?.destroy();
+    seat.angerMark?.destroy();
     seat.body = undefined;
     seat.bubble = undefined;
+    seat.angerMark = undefined;
 
     const customer = seat.customer;
     if (!customer) {
       seat.barFill.scaleX = 0;
       seat.barBg.setAlpha(0.2);
-      const vacant = this.add
-        .text(0, 8, "空席", {
-          fontFamily: FONT,
-          fontSize: "13px",
-          color: "#8d6e4c",
-        })
-        .setOrigin(0.5);
-      seat.bubble = this.add.container(0, 0, [vacant]);
-      seat.root.add(seat.bubble);
+      if (this.textures.exists("seat-empty")) {
+        seat.body = this.add.image(0, -6, "seat-empty").setDisplaySize(80, 112);
+        seat.root.add(seat.body);
+      }
       return;
     }
 
+    const child = customer.kind === "child";
     if (this.textures.exists(customer.spriteKey)) {
-      const child = customer.kind === "child";
       seat.body = this.add
         .image(0, child ? -4 : -8, customer.spriteKey)
         .setDisplaySize(child ? 84 : 94, child ? 100 : 110);
       seat.root.add(seat.body);
     }
 
-    const bubble = this.add.container(0, -78);
+    const bubble = this.add.container(0, -86);
     const g = this.add.graphics();
     g.fillStyle(0xfff8e1, 0.95);
     g.lineStyle(2, 0x5d3318, 0.85);
-    g.fillRoundedRect(-40, -22, 80, 40, 10);
-    g.strokeRoundedRect(-40, -22, 80, 40, 10);
-    const mini = this.createMiniOrder(customer.amount);
+    g.fillRoundedRect(-48, -26, 96, 54, 12);
+    g.strokeRoundedRect(-48, -26, 96, 54, 12);
+    const mini = this.createMiniOrder(customer.neta, customer.wasabi);
     bubble.add([g, mini]);
     seat.bubble = bubble;
     seat.root.add(bubble);
+
+    if (this.textures.exists("anger-mark")) {
+      const at = ANGER_MARK_AT[child ? "child" : "adult"];
+      const size = ANGER_MARK_SIZE[child ? "child" : "adult"];
+      seat.angerMark = this.add
+        .image(at.x, at.y, "anger-mark")
+        .setDisplaySize(size, size)
+        .setVisible(false);
+      seat.root.add(seat.angerMark);
+      seat.root.bringToTop(seat.angerMark);
+    }
+
     this.updateSeatBar(seat);
     seat.root.bringToTop(seat.barBg);
     seat.root.bringToTop(seat.barFill);
   }
 
-  private createMiniOrder(amount: WasabiAmount): Phaser.GameObjects.Container {
+  private createMiniOrder(neta: NetaKind, wasabi: WasabiAmount): Phaser.GameObjects.Container {
     const mini = this.add.container(0, -4);
-    if (this.textures.exists("maguro")) {
-      mini.add(this.add.image(-10, 0, "maguro").setDisplaySize(28, 22));
+    const netaKey = neta === "tamago" ? "tamago" : "maguro";
+    if (this.textures.exists(netaKey)) {
+      mini.add(this.add.image(-10, -2, netaKey).setDisplaySize(32, 26));
     }
-    if (amount !== "none" && this.textures.exists("wasabi")) {
-      const size = amount === "extra" ? 18 : 11;
-      mini.add(this.add.image(10, -8, "wasabi").setDisplaySize(size, size + 2));
+    if (neta === "maguro" && wasabi !== "none" && this.textures.exists("wasabi")) {
+      const size = wasabi === "extra" ? 20 : 13;
+      mini.add(this.add.image(12, -10, "wasabi").setDisplaySize(size, size + 2));
     }
+    const labelText = neta === "tamago" ? "たまご" : WASABI_LABEL[wasabi];
     mini.add(
       this.add
-        .text(0, 16, WASABI_LABEL[amount], {
+        .text(0, 18, labelText, {
           fontFamily: FONT,
-          fontSize: "11px",
+          fontSize: "16px",
           color: "#5d3318",
           fontStyle: "bold",
         })
@@ -481,16 +577,17 @@ export class GameScene extends Phaser.Scene {
     return mini;
   }
 
-  private createPlateVisual(amount: WasabiAmount): Phaser.GameObjects.Container {
+  private createPlateVisual(neta: NetaKind, wasabi: WasabiAmount): Phaser.GameObjects.Container {
     const parts: Phaser.GameObjects.GameObject[] = [];
     if (this.textures.exists("plate-empty")) {
       parts.push(this.add.image(0, 8, "plate-empty").setDisplaySize(PLATE_WIDTH + 4, PLATE_HEIGHT + 6));
     }
-    if (this.textures.exists("maguro")) {
-      parts.push(this.add.image(0, -8, "maguro").setDisplaySize(58, 46));
+    const netaKey = neta === "tamago" ? "tamago" : "maguro";
+    if (this.textures.exists(netaKey)) {
+      parts.push(this.add.image(0, -8, netaKey).setDisplaySize(58, 46));
     }
-    if (amount !== "none" && this.textures.exists("wasabi")) {
-      const extra = amount === "extra";
+    if (neta === "maguro" && wasabi !== "none" && this.textures.exists("wasabi")) {
+      const extra = wasabi === "extra";
       parts.push(
         this.add
           .image(extra ? 12 : 10, extra ? -28 : -20, "wasabi")
@@ -501,38 +598,69 @@ export class GameScene extends Phaser.Scene {
   }
 
   private drawButtons(width: number, height: number): void {
-    const amounts: WasabiAmount[] = ["none", "normal", "extra"];
-    amounts.forEach((amount, i) => {
-      const x = width * (0.2 + i * 0.3);
-      const y = height - 62;
-      const root = this.add.container(x, y);
-      const hit = this.add
-        .rectangle(0, 0, 150, 92, 0x000000, 0.001)
-        .setInteractive({ useHandCursor: true });
-      const g = this.add.graphics();
-      g.fillStyle(0xfff3e0, 0.95);
-      g.lineStyle(3, 0x5d3318, 0.9);
-      g.fillRoundedRect(-72, -40, 144, 80, 16);
-      g.strokeRoundedRect(-72, -40, 144, 80, 16);
-      const preview = this.createPlateVisual(amount);
-      preview.setScale(0.72);
-      preview.y = -8;
-      const label = this.add
-        .text(0, 26, WASABI_LABEL[amount], {
-          fontFamily: FONT,
-          fontSize: "16px",
-          color: "#5d3318",
-          fontStyle: "bold",
-        })
-        .setOrigin(0.5);
-      root.add([g, preview, label, hit]);
+    const maguroAmounts: WasabiAmount[] = ["none", "normal", "extra"];
+    const buttonW = 180;
+    const buttonH = 80;
+    const slots = 4;
 
-      hit.on("pointerover", () => root.setScale(1.06));
-      hit.on("pointerout", () => root.setScale(1));
-      hit.on("pointerdown", () => {
-        SoundFx.unlock();
-        this.ship(amount);
-      });
+    maguroAmounts.forEach((wasabi, i) => {
+      this.drawShipButton(
+        width * (i + 0.5) / slots,
+        height - 62,
+        buttonW,
+        buttonH,
+        { neta: "maguro", wasabi },
+        WASABI_LABEL[wasabi],
+      );
+    });
+
+    this.drawShipButton(
+      width * (3 + 0.5) / slots,
+      height - 62,
+      buttonW,
+      buttonH,
+      { neta: "tamago", wasabi: "none" },
+      "たまご",
+    );
+  }
+
+  private drawShipButton(
+    x: number,
+    y: number,
+    buttonW: number,
+    buttonH: number,
+    order: Order,
+    labelText: string,
+  ): void {
+    const root = this.add.container(x, y);
+    const halfW = buttonW / 2;
+    const halfH = buttonH / 2;
+    const hit = this.add
+      .rectangle(0, 0, buttonW - 8, buttonH + 12, 0x000000, 0.001)
+      .setInteractive({ useHandCursor: true });
+    const g = this.add.graphics();
+    g.fillStyle(0xfff3e0, 0.95);
+    g.lineStyle(3, 0x5d3318, 0.9);
+    g.fillRoundedRect(-halfW, -halfH, buttonW, buttonH, 16);
+    g.strokeRoundedRect(-halfW, -halfH, buttonW, buttonH, 16);
+    const preview = this.createPlateVisual(order.neta, order.wasabi);
+    preview.setScale(0.72);
+    preview.y = -8;
+    const label = this.add
+      .text(0, 26, labelText, {
+        fontFamily: FONT,
+        fontSize: "18px",
+        color: "#5d3318",
+        fontStyle: "bold",
+      })
+      .setOrigin(0.5);
+    root.add([g, preview, label, hit]);
+
+    hit.on("pointerover", () => root.setScale(1.06));
+    hit.on("pointerout", () => root.setScale(1));
+    hit.on("pointerdown", () => {
+      SoundFx.unlock();
+      this.ship(order);
     });
   }
 
@@ -548,36 +676,30 @@ export class GameScene extends Phaser.Scene {
       .setOrigin(0.5);
 
     this.rushText = this.add
-      .text(width / 2, 58, "繁忙!", {
+      .text(width / 2, 62, "繁忙!", {
         fontFamily: FONT,
-        fontSize: "16px",
+        fontSize: "20px",
         color: "#c62828",
         fontStyle: "bold",
       })
       .setOrigin(0.5)
+      .setStroke("#fff8e1", 6)
       .setAlpha(0);
 
-    this.add.image(70, 78, "plate-red").setDisplaySize(96, 96);
-    this.add
-      .text(70, 56, "SCORE", {
-        fontFamily: FONT,
-        fontSize: "10px",
-        color: "#fff8e1",
-      })
-      .setOrigin(0.5);
+    this.add.image(70, 78, "plate-octagon").setDisplaySize(96, 96);
     this.scoreText = this.add
-      .text(70, 74, "0", {
+      .text(70, 78, "0", {
         fontFamily: FONT,
-        fontSize: "20px",
-        color: "#fff8e1",
+        fontSize: "22px",
+        color: "#3e2723",
         fontStyle: "bold",
       })
       .setOrigin(0.5);
     this.comboText = this.add
-      .text(70, 94, "コンボ x1", {
+      .text(70, 138, "コンボ x1", {
         fontFamily: FONT,
-        fontSize: "11px",
-        color: "#ffe082",
+        fontSize: "16px",
+        color: "#5d3318",
         fontStyle: "bold",
       })
       .setOrigin(0.5);
@@ -592,10 +714,15 @@ export class GameScene extends Phaser.Scene {
   }
 
   private refreshHud(): void {
-    this.scoreText.setText(`${this.score}`);
+    this.scoreText.setText(formatScore(this.score));
     const multiplier = Math.min(Math.max(this.combo, 1), MAX_COMBO_MULTIPLIER);
     this.comboText.setText(`コンボ x${multiplier}`);
-    this.comboText.setAlpha(this.combo > 0 ? 1 : 0.35);
+    if (this.combo > 0) {
+      this.comboText.setColor("#3e2723");
+    } else {
+      this.comboText.setColor("#5d3318");
+    }
+    this.comboText.setAlpha(1);
 
     for (let i = 0; i < this.lifeIcons.length; i++) {
       const filled = i < this.life;
@@ -617,6 +744,7 @@ export class GameScene extends Phaser.Scene {
         fontStyle: "bold",
       })
       .setOrigin(0.5)
+      .setStroke("#fff8e1", 5)
       .setDepth(5);
     const targets = fx ? [label, fx] : [label];
     this.tweens.add({
@@ -647,29 +775,30 @@ export class GameScene extends Phaser.Scene {
     this.plates = [];
 
     const { width, height } = this.scale;
-    this.add.rectangle(width / 2, height / 2, width, height, 0x3e2723, 0.55);
-    if (this.textures.exists("plate-red")) {
-      this.add.image(width / 2, height / 2 - 8, "plate-red").setDisplaySize(360, 360);
+    this.add.rectangle(width / 2, height / 2, width, height, 0x3e2723, 0.72);
+    if (this.textures.exists("plate-octagon")) {
+      this.add.image(width / 2, height / 2 - 8, "plate-octagon").setDisplaySize(360, 360);
     }
     this.add
-      .text(width / 2, height / 2 - 48, "おしまい", {
+      .text(width / 2, height / 2 - 28, "おしまい", {
         fontFamily: FONT,
-        fontSize: "42px",
-        color: "#fff8e1",
+        fontSize: "36px",
+        color: "#3e2723",
         fontStyle: "bold",
       })
       .setOrigin(0.5);
     this.add
-      .text(width / 2, height / 2 + 4, `SCORE  ${this.score}`, {
+      .text(width / 2, height / 2 + 8, `SCORE  ${formatScore(this.score)}`, {
         fontFamily: FONT,
         fontSize: "22px",
-        color: "#ffe082",
+        color: "#5d3318",
+        fontStyle: "bold",
       })
       .setOrigin(0.5);
 
     const retry = this.add.container(width / 2, height / 2 + 96);
     const makisu = this.textures.exists("makisu")
-      ? this.add.image(0, 0, "makisu").setDisplaySize(210, 136)
+      ? this.add.image(0, 0, "makisu").setDisplaySize(210, 136).setAlpha(0.78)
       : undefined;
     const retryHit = this.add
       .rectangle(0, 0, 210, 136, 0x000000, 0.001)
@@ -678,7 +807,7 @@ export class GameScene extends Phaser.Scene {
       .text(0, 4, "もういちど", {
         fontFamily: FONT,
         fontSize: "22px",
-        color: "#5d3318",
+        color: "#c62828",
         fontStyle: "bold",
       })
       .setOrigin(0.5);
